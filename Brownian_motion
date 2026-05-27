@@ -1,0 +1,181 @@
+%% Exercise 1
+%  Brownian Motion
+function Bt = brown_rw(t, n, p, S0)
+if nargin < 3, p = 0.5; end
+if nargin < 4, S0 = 0; end
+dt = t / n;
+rand_vec = rand(n,1) < p;
+Xi = sqrt(dt) * (2*rand_vec - 1);
+Bt = S0 + sum(Xi);
+end
+
+function Bt = brown_gauss(t, n, S0)
+if nargin < 3, S0 = 0; end
+dt = t / n;
+increments = sqrt(dt) * randn(n,1);
+Bt = S0 + sum(increments);
+end
+
+function path = brown_path(t, n, S0)
+if nargin < 3, S0 = 0; end
+dt = t / n;
+path = zeros(n+1,1); path(1) = S0;
+for i=1:n
+    path(i+1) = path(i) + sqrt(dt)*randn;
+end
+end
+
+%% Monte Carlo Test t=1, n=1000, mc=10000
+t=1; n=1000; mc=10000;
+B_rw = arrayfun(@(i) brown_rw(t,n), 1:mc);
+B_gauss = arrayfun(@(i) brown_gauss(t,n), 1:mc);
+p_rw = mean(abs(B_rw)<0.5);
+p_gauss = mean(abs(B_gauss)<0.5);
+theory = normcdf(0.5)-normcdf(-0.5);
+fprintf('Theory: %.4f\nRW: %.4f\nGAUSS: %.4f\n', theory, p_rw, p_gauss);
+
+%% Exercise 2 
+x = 0:10;
+y = 0:10;
+[X, Y] = meshgrid(x, y);
+
+% 1. Calculate Constant c
+f_raw = 0.2*X + 1.5*Y; 
+c = 1 / sum(f_raw(:));
+f = c * f_raw; % f(x,y)
+
+% 2. Marginal Distributions
+f_x = sum(f, 1); % Marginal Distribution x (sum in column y)
+f_y = sum(f, 2); % Marginal Distribution y (sum in row x)
+
+% 3. Mean E(X)
+EX = sum(x .* f_x);
+
+% 4.  Conditional Expected Value E(X|Y)
+% For each y, E(X|Y=y) = sum(x * f(x,y) / f_y(y))
+EX_given_Y = zeros(size(y));
+for j = 1:length(y)
+    EX_given_Y(j) = sum(x .* (f(j,:) / f_y(j)));
+end
+
+% 5. Verification E(E(X|Y))
+E_EX_Y = sum(EX_given_Y' .* f_y);
+
+% Display results
+fprintf('Constant c: %.8f\n', c);
+fprintf('E(X): %.4f\n', EX);
+fprintf('E(E(X|Y)): %.4f\n', E_EX_Y);
+
+%% Exercise 3
+mu = 0.1; sigma = 2; x0 = 100;
+a = 95; b = 110;
+t = 15; n = 1000; mc = 500;
+
+success = 0; % Counting the times that we have success
+dt = t/n;
+time_vec = (0:dt:t)'; % Time Vector [0, 15]
+
+for i = 1:mc
+    % Brownian Motion Creation (Gauss increments)
+    dW = sqrt(dt) * randn(n, 1);
+    W = [0; cumsum(dW)]; % Cumulative sum for the path
+    
+    % Calculate price stock X(t)
+    X = mu * time_vec + sigma * W + x0;
+    
+    % Find the first time that reaches the limits
+    idx_b = find(X >= b, 1); % First time that X >= 110
+    idx_a = find(X <= a, 1); % First time that X <= 95
+    
+    % Check for success: We must "hit" b και
+    % (wither never hit a, either b was hit earlier)
+    if ~isempty(idx_b) && (isempty(idx_a) || idx_b < idx_a)
+        success = success + 1;
+    end
+end
+
+prob = success / mc;
+fprintf('Probability for the investor to win: %.4f\n', prob);
+
+%% Exercise 4
+T = 3; n = 500; mc = 100;
+dt = T/n;
+
+LHS = zeros(mc, 1); % Left part
+RHS = zeros(mc, 1); % Right part
+
+for j = 1:mc
+    % Create Brownian path
+    dW = sqrt(dt) * randn(n, 1);
+    W = [0; cumsum(dW)]; 
+    
+    % Left part Calculation (Ito Integral)
+    % sum( B(t_i-1) * delta_B )
+    integral_sum = 0;
+    for i = 1:n
+        integral_sum = integral_sum + W(i) * dW(i);
+    end
+    LHS(j) = integral_sum;
+    
+    % Right part Calculation
+    RHS(j) = 0.5 * W(end)^2 - T/2;
+end
+
+% Statistics
+fprintf('Left part (LHS) -> Mean: %.4f, Variance: %.4f\n', mean(LHS), var(LHS));
+fprintf('Right part (RHS)     ->Mean: %.4f, Variance: %.4f\n', mean(RHS), var(RHS));
+
+%% Exercise 5
+X0 = 1; lambda = 1.5; sigma = 0.5;
+T = 2; m = 300; n = 500;
+dt = T/n;
+
+XT = zeros(m, 1); % Empty matrix to save X(T)
+
+for j = 1:m
+    X_current = X0;
+    for i = 1:n
+        % Generation of the stochastic step dB ~ N(0, dt)
+        dB = sqrt(dt) * randn;
+        
+        % Application of the discretized equation
+        X_next = X_current - lambda * X_current * dt + sigma * dB;
+        
+        % Update the current price
+        X_current = X_next;
+    end
+    XT(j) = X_current; % Save the result in time T
+end
+
+% Calculate Mean and Variance
+mean_XT = mean(XT);
+var_XT = var(XT);
+
+% Theoritical prices to check 
+theory_mean = X0 * exp(-lambda * T);
+theory_var = (sigma^2 / (2 * lambda)) * (1 - exp(-2 * lambda * T));
+
+fprintf('Monte Carlo -> Mean: %.4f, Variance: %.4f\n', mean_XT, var_XT);
+fprintf('Theory     -> Mean: %.4f, Variance: %.4f\n', theory_mean, theory_var);
+
+%% Exercise 6
+% Black-Scholes model
+S_t = 100;    % Current price of stock S(t)
+K = 105;      % Strike price
+r = 0.05;     % Risk-free interest rate 5%
+sigma = 0.2; % Volatility 20%
+T = 1;        % Maturity time in years
+t = 0;        % Current time
+
+% 2. Calculate Time to maturity
+dt = T - t;
+
+% 3. Calculation of d1 and d2
+d1 = (log(S_t / K) + (r + (sigma^2) / 2) * dt) / (sigma * sqrt(dt));
+d2 = d1 - sigma * sqrt(dt);
+
+% 4. Calculation of Call Option c(t) price
+c_t = S_t * normcdf(d1) - K * exp(-r * dt) * normcdf(d2);
+
+% Display result
+fprintf('The price of the Call Option c(t) is: %.4f\n', c_t);
